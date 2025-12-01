@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+deepface
+tf-keras
+google-generativeai
+python-multipart
+opencv-python
+numpy
+python-dotenv
+duckduckgo_search
+colorama
+timm==0.9.12
