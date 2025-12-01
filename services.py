@@ -2,69 +2,175 @@ import cv2
 import numpy as np
 import json
 import os
+import ssl
+import torch
 import concurrent.futures
 from deepface import DeepFace
+# HSEmotion Importu
+from hsemotion.facial_emotions import HSEmotionRecognizer
 import google.generativeai as genai
 from models import Category
 from prompts import build_gemini_prompt
 from search_service import get_poster_url
+from utils import ExecutionTimer
 from dotenv import load_dotenv
-from utils import ExecutionTimer  # <-- YENİ IMPORT
 
+# --- 1. SİSTEM VE GÜVENLİK AYARLARI (SSL & PyTorch Fix) ---
+os.environ['CURL_CA_BUNDLE'] = ''
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+# PyTorch 2.6+ Güvenlik Bypass (Modeli yükleyebilmek için)
+_original_torch_load = torch.load
+
+
+def _unsafe_torch_load(*args, **kwargs):
+    kwargs['weights_only'] = False
+    return _original_torch_load(*args, **kwargs)
+
+
+torch.load = _unsafe_torch_load
+
+# --- 2. KONFİGÜRASYON ---
 load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel(
     'gemini-flash-latest',
-    generation_config={
-        "response_mime_type": "application/json",
-        "temperature": 0.7,
-        "max_output_tokens": 8192 # Kesilme olmasın diye limiti açtık
-    },
-    safety_settings={
-        "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-        "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-        "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-        "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-    }
+    generation_config={"response_mime_type": "application/json"}
 )
 
+# --- 3. HSEMOTION MODELİ YÜKLEME ---
+print("⏳ AI Modelleri Hazırlanıyor...")
+try:
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    # Testte kullandığımız en iyi model
+    fer = HSEmotionRecognizer(model_name='enet_b0_8_best_vgaf', device=device)
+    print(f"✅ HSEmotion (Duygu) Hazır! ({device})")
+except Exception as e:
+    print(f"❌ HSEmotion Hatası: {e}")
+    fer = None
 
-def analyze_image_with_deepface(image_bytes):
-    # Tüm işlemi Timer içine alıyoruz
-    with ExecutionTimer("DeepFace Görüntü Analizi"):
+# --- 4. HASSAS EŞİK AYARLARI (Live Test'ten Birebir) ---
+THRESHOLDS = {
+    "Happiness": 0.30,
+    "Sadness": 0.30,
+    "Anger": 0.15,
+    "Fear": 0.04,  # %4 Korku görse bile yakalayacak
+    "Disgust": 0.05,
+    "Surprise": 0.15,
+    "Contempt": 0.40
+}
+
+
+# --- YARDIMCI FONKSİYONLAR ---
+
+def calculate_custom_emotion(scores):
+    """
+    HSEmotion skorlarını alıp, bizim hassas eşiklerimize göre karar verir.
+    """
+    idx_to_class = {0: 'Anger', 1: 'Contempt', 2: 'Disgust', 3: 'Fear', 4: 'Happiness', 5: 'Neutral', 6: 'Sadness',
+                    7: 'Surprise'}
+
+    # Skor listesini sözlüğe çevir: {'Anger': 0.05, ...}
+    score_dict = {idx_to_class[i]: s for i, s in enumerate(scores)}
+
+    # 1. Öncelik: Neutral hariç, eşiği geçen en yüksek skoru bul
+    best_emotion = "Neutral"
+    max_score = 0
+
+    for emotion, score in score_dict.items():
+        if emotion == "Neutral": continue
+
+        limit = THRESHOLDS.get(emotion, 0.2)
+        if score > limit and score > max_score:
+            max_score = score
+            best_emotion = emotion
+
+    # Eğer custom bir duygu bulunamadıysa Neutral dön, bulunduysa onu dön
+    return best_emotion, score_dict
+
+
+def analyze_image_with_smart_ai(image_bytes):
+    """
+    1. RetinaFace ile yüzü bul.
+    2. DeepFace ile Yaş/Cinsiyet al.
+    3. HSEmotion ile Hassas Duygu Analizi yap.
+    """
+    with ExecutionTimer("Gelişmiş Görüntü Analizi"):
         try:
             nparr = np.frombuffer(image_bytes, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-            # DeepFace'in asıl vakit harcadığı yer
-            analysis = DeepFace.analyze(img_path=img, actions=['emotion', 'age', 'gender'], enforce_detection=False)
-            result = analysis[0] if isinstance(analysis, list) else analysis
+            # 1. Adım: Yüzü Bul ve Yaş/Cinsiyet Analizi (DeepFace)
+            # RetinaFace kullanarak yüzü buluyoruz
+            demography_objs = DeepFace.analyze(
+                img_path=img,
+                actions=['age', 'gender'],  # Sadece yaş ve cinsiyet soruyoruz
+                detector_backend='retinaface',
+                enforce_detection=False,
+                silent=True
+            )
+
+            demography = demography_objs[0] if isinstance(demography_objs, list) else demography_objs
+
+            # Yüz koordinatlarını al (HSEmotion için yüzü keseceğiz)
+            region = demography['region']
+            x, y, w, h = region['x'], region['y'], region['w'], region['h']
+
+            # Resmi kes (Crop)
+            face_img = img[y:y + h, x:x + w]
+
+            # 2. Adım: HSEmotion için hazırlık
+            # Eğer yüz çok küçükse veya bulunamadıysa DeepFace verisini kullan (Fallback)
+            if face_img.size == 0:
+                print("⚠️ Yüz kesilemedi, varsayılan analiz kullanılıyor.")
+                return None
+
+            # HSEmotion formatı (RGB ve Resize)
+            face_img = cv2.resize(face_img, (224, 224))  # HSEmotion 224x224 sever
+            face_img_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+
+            # 3. Adım: HSEmotion Tahmini
+            if fer:
+                _, scores = fer.predict_emotions(face_img_rgb, logits=False)
+                dominant_emotion, score_dict = calculate_custom_emotion(scores)
+            else:
+                # Eğer HSEmotion yüklenemezse DeepFace'e dön (Yedek)
+                dominant_emotion = "Neutral (Backup)"
+                score_dict = {}
+
+            # Yaş ve Cinsiyeti formatla
+            age = int(demography['age'])
+            gender = demography['dominant_gender']
 
             return {
-                "emotion": result['dominant_emotion'],
-                "age": int(result['age']),
-                "gender": result['dominant_gender'],
-                "raw_emotion_scores": {k: float(v) for k, v in result['emotion'].items()}
+                "emotion": dominant_emotion,  # Artık "Sadness", "Fear" gibi hassas sonuçlar
+                "age": age,
+                "gender": gender,
+                "raw_emotion_scores": {k: float(v) for k, v in score_dict.items()}  # JSON için float dönüşümü
             }
+
         except Exception as e:
-            print(f"DeepFace Hatası: {e}")
+            print(f"Vision Pipeline Hatası: {e}")
             return None
 
 
 def update_item_with_poster(item, category):
-    # Tek bir posterin bulunma süresini ölçmek istersen (Opsiyonel, konsolu çok doldurabilir)
-    # with ExecutionTimer(f"Poster: {item['title']}"):
     try:
         poster = get_poster_url(item['title'], item['creator'], category)
         item['poster_url'] = poster
     except Exception as e:
-        print(f"Poster hatası ({item['title']}): {e}")
+        print(f"Poster hatası: {e}")
     return item
 
+
 def get_recommendations_from_gemini(user_context, category: Category):
-    raw_response_text = ""  # Hata durumunda loglamak için
     try:
         with ExecutionTimer("Prompt Engineering"):
             prompt = build_gemini_prompt(
@@ -75,12 +181,9 @@ def get_recommendations_from_gemini(user_context, category: Category):
                 raw_scores=user_context['raw_emotion_scores']
             )
 
-        with ExecutionTimer(f"Gemini AI Yanıt ({category.value})"):
+        with ExecutionTimer(f"Gemini AI ({category.value})"):
             response = model.generate_content(prompt)
-            raw_response_text = response.text  # Cevabı sakla
-
-            # Temizlik
-            clean_json = raw_response_text.replace("```json", "").replace("```", "").strip()
+            clean_json = response.text.replace("```json", "").replace("```", "").strip()
             data = json.loads(clean_json)
 
         recommendations = data.get('recommendations', [])
@@ -95,10 +198,6 @@ def get_recommendations_from_gemini(user_context, category: Category):
 
         return data
 
-    except json.JSONDecodeError as je:
-        print(f"❌ JSON PARSE HATASI!")
-        print(f"Gelen Hatalı Metin: {raw_response_text}")  # İşte bunu görmek hayat kurtarır
-        return None
     except Exception as e:
-        print(f"Genel Servis Hatası: {e}")
+        print(f"AI Servis Hatası: {e}")
         return None

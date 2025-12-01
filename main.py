@@ -1,6 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from models import Category, VibeResponse
-from services import analyze_image_with_deepface, get_recommendations_from_gemini
+from services import analyze_image_with_smart_ai, get_recommendations_from_gemini
 
 app = FastAPI(title="VibeLens API")
 
@@ -12,7 +12,7 @@ async def analyze(
 ):
     # 1. Görüntüyü İşle
     image_bytes = await file.read()
-    user_context = analyze_image_with_deepface(image_bytes)
+    user_context = analyze_image_with_smart_ai(image_bytes)
 
     if not user_context:
         raise HTTPException(status_code=400, detail="Yüz tespit edilemedi.")
