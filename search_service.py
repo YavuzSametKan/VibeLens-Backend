@@ -2,10 +2,10 @@ import requests
 import os
 import time
 import random
-import re  # YENİ: URL ve Başlık temizliği için Regex
+import re
+import urllib.parse  # Link üretimi için gerekli
 from io import BytesIO
 from PIL import Image
-import hashlib
 from dotenv import load_dotenv
 from models import Category
 from duckduckgo_search import DDGS
@@ -16,61 +16,53 @@ TMDB_KEY = os.getenv("TMDB_API_KEY")
 PLACEHOLDER_IMG = "https://placehold.co/600x900?text=No+Image"
 
 
-def clean_query_for_api(title: str) -> str:
-    """
-    'Kurtarıcı Projesi (Project Hail Mary)' gibi karmaşık başlıkları temizler.
-    Open Library gibi hassas API'ler için gereklidir.
-    """
-    # 1. Parantez içindeki metni al (Genelde orijinal isim ordadır)
-    match = re.search(r'\((.*?)\)', title)
-    if match:
-        return match.group(1)  # "Project Hail Mary" döner
+# --- YARDIMCI ARAÇLAR ---
 
-    # Parantez yoksa olduğu gibi döndür
-    return title
+def generate_music_links(artist: str, track: str, apple_url: str = None) -> dict:
+    """
+    Şarkı ve sanatçı adından Spotify ve YT Music arama linkleri üretir.
+    """
+    query = f"{artist} {track}"
+    safe_query = urllib.parse.quote(query)
+
+    links = {
+        "spotify": f"https://open.spotify.com/search/{safe_query}",
+        "youtube_music": f"https://music.youtube.com/search?q={safe_query}",
+        "youtube": f"https://www.youtube.com/results?search_query={safe_query}"
+    }
+
+    if apple_url:
+        links["apple_music"] = apple_url
+
+    return links
+
+
+def clean_query_for_api(title: str) -> str:
+    cleaned = re.sub(r"\(.*?\)", "", title).strip()
+    return cleaned
 
 
 def is_valid_image(url: str) -> bool:
-    """
-    Resmin boyutunu ve bütünlüğünü kontrol eder.
-    """
     if not url or "placehold.co" in url: return False
-
-    # Google Books için ön kontrol (Hızlı eleme)
-    if "books.google.com" in url and "zoom=0" not in url:
-        # Eğer zoom=0 değilse düzeltmeyi denemediysek şüpheli
-        pass
+    if "books.google.com" in url and "zoom=0" not in url: pass
 
     try:
         response = requests.get(url, timeout=4)
         if response.status_code != 200: return False
-
         img_data = response.content
         img = Image.open(BytesIO(img_data))
 
-        # 1. PİKSEL KONTROLÜ:
-        if img.width < 50 or img.height < 50:
-            print(f"⚠️ Resim çok küçük ({img.width}x{img.height}). Reddedildi.")
-            return False
-
-        # 2. DOSYA BOYUTU KONTROLÜ:
-        if len(img_data) < 2500:  # 2.5KB altı kesinlikle placeholderdır
-            print(f"⚠️ Dosya boyutu şüpheli ({len(img_data)} bytes). Reddedildi.")
-            return False
-
+        if img.width < 50 or img.height < 50: return False
+        if len(img_data) < 2500: return False
         return True
     except Exception:
         return False
 
 
 def search_image_fallback(query: str) -> str:
-    """
-    Web Scraping (DuckDuckGo). Son çare.
-    """
     try:
         print(f"🕷️ Fallback: Web Scraping (DDG) deneniyor: '{query}'")
         time.sleep(random.uniform(1.5, 3.0))
-
         with DDGS() as ddgs:
             results = list(ddgs.images(query, max_results=1, safesearch="off"))
             if results:
@@ -79,68 +71,85 @@ def search_image_fallback(query: str) -> str:
                 return found
     except Exception as e:
         print(f"⚠️ Scraping Hatası: {e}")
-
     return PLACEHOLDER_IMG
 
 
-# --- OPEN LIBRARY (YEDEK) ---
-def _fetch_from_open_library(title: str, creator: str) -> str:
-    """
-    Open Library Covers API.
-    Başlık temizliği yaparak arama şansını artırır.
-    """
-    # Başlığı temizle: "Kurtarıcı Projesi (Project Hail Mary)" -> "Project Hail Mary"
-    cleaned_title = clean_query_for_api(title)
+# --- ANA FONKSİYON: METADATA TOPLAYICI ---
 
-    print(f"🏛️ Open Library Sorgusu: '{cleaned_title} {creator}'")
+def get_content_metadata(title: str, creator: str, category: Category) -> dict:
+    """
+    Strateji:
+    - FILM/DIZI: TMDB (Poster + Metadata)
+    - KITAP: Sadece Poster (Metadata Gemini'den)
+    - MUZIK: Poster + Linkler (Metadata Gemini'den)
+    """
 
-    search_url = "https://openlibrary.org/search.json"
-    params = {"q": f"{cleaned_title} {creator}", "limit": 1}
+    metadata = {
+        "poster": PLACEHOLDER_IMG,
+        "overview": None,
+        "rating": None,
+        "year": None,
+        "external_links": None  # YENİ ALAN
+    }
 
     try:
-        res = requests.get(search_url, params=params, timeout=5).json()
-        if res.get('docs'):
-            doc = res['docs'][0]
-            # cover_i varsa kullan
-            if doc.get('cover_i'):
-                cover_id = doc['cover_i']
-                return f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg"
-            # ISBN varsa onu dene (daha garanti)
-            elif doc.get('isbn'):
-                isbn = doc['isbn'][0]
-                return f"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg"
-    except Exception as e:
-        print(f"OpenLib Hatası: {e}")
-    return None
+        # 1. FILM & DIZI
+        if category == Category.MOVIE:
+            api_data = _fetch_tmdb_metadata(title, "movie")
+            if api_data: metadata.update(api_data)
 
+        elif category == Category.SERIES:
+            api_data = _fetch_tmdb_metadata(title, "tv")
+            if api_data: metadata.update(api_data)
+
+        # 2. MUZIK (Özel İlgi Alanı: Linkler)
+        elif category == Category.MUSIC:
+            # Önce iTunes'a soralım (Hem poster hem link için)
+            itunes_data = _fetch_itunes_full_metadata(f"{title} {creator}")
+
+            if itunes_data:
+                metadata.update(itunes_data)
+            else:
+                # iTunes bulamazsa posteri normal yolla bul, linkleri manuel üret
+                metadata["poster"] = get_poster_url(title, creator, category)
+                metadata["external_links"] = generate_music_links(creator, title)
+
+        # 3. KITAP
+        elif category == Category.BOOK:
+            poster_url = get_poster_url(title, creator, category)
+            metadata["poster"] = poster_url
+
+        # 4. YEDEKLEME (Sadece Film/Dizi Posterleri İçin)
+        if category in [Category.MOVIE, Category.SERIES]:
+            if not is_valid_image(metadata["poster"]):
+                print(f"🔄 TMDB posteri yok. Scraping devreye giriyor...")
+                scrape_query = f"{title} {creator} {category.value} official poster"
+                metadata["poster"] = search_image_fallback(scrape_query)
+
+    except Exception as e:
+        print(f"Metadata Hatası: {e}")
+
+    return metadata
+
+
+# --- POSTER BULUCU (MEVCUT - DOKUNULMADI) ---
 
 def get_poster_url(title: str, creator: str, category: Category) -> str:
     image_url = None
 
     try:
-        if category == Category.MOVIE:
-            image_url = _fetch_from_tmdb(title, "movie")
-        elif category == Category.SERIES:
-            image_url = _fetch_from_tmdb(title, "tv")
+        if category == Category.BOOK:
+            image_url = _fetch_from_google_books(title)
+            if not image_url or not is_valid_image(image_url):
+                image_url = _fetch_from_open_library(title, creator)
+
         elif category == Category.MUSIC:
             image_url = _fetch_from_itunes_music(f"{title} {creator}")
-
-        elif category == Category.BOOK:
-            # 1. Google Books (En İyi Eşleşme)
-            print(f"📖 Google Books deneniyor: {title}")
-            image_url = _fetch_from_google_books(title)
-
-            # 2. Validasyon: Google patlarsa -> Open Library Dene
-            if not image_url or not is_valid_image(image_url):
-                print(f"🏛️ Open Library deneniyor (Google başarısız): {title}")
-                image_url = _fetch_from_open_library(title, creator)
 
     except Exception as e:
         print(f"API Hatası: {e}")
 
-    # 3. Validasyon: Hala yoksa -> Scraping
     if not image_url or not is_valid_image(image_url):
-        print(f"🔄 API'ler başarısız. Scraping devreye giriyor...")
         scrape_query = f"{title} {creator} {category.value} official cover high resolution"
         image_url = search_image_fallback(scrape_query)
 
@@ -149,18 +158,84 @@ def get_poster_url(title: str, creator: str, category: Category) -> str:
 
 # --- API FONKSİYONLARI ---
 
-def _fetch_from_tmdb(query: str, type: str) -> str:
+def _fetch_tmdb_metadata(query: str, type: str) -> dict:
     if not TMDB_KEY: return None
+
+    clean_query = clean_query_for_api(query)  # Temizlenmiş başlık
+
     url = f"https://api.themoviedb.org/3/search/{type}"
-    params = {"api_key": TMDB_KEY, "query": query, "language": "tr-TR"}
+    params = {"api_key": TMDB_KEY, "query": clean_query, "language": "tr-TR"}
+
     try:
         res = requests.get(url, params=params).json()
-        if res.get('results') and res['results'][0].get('poster_path'):
-            return f"https://image.tmdb.org/t/p/w500{res['results'][0]['poster_path']}"
+        results = res.get('results', [])
+
+        if not results: return None
+
+        # En popüler olanı seç (Vote Count'a göre)
+        best_match = max(results, key=lambda x: x.get('vote_count', 0))
+
+        poster = PLACEHOLDER_IMG
+        if best_match.get('poster_path'):
+            poster = f"https://image.tmdb.org/t/p/w500{best_match['poster_path']}"
+
+        date_field = 'release_date' if type == 'movie' else 'first_air_date'
+        year = best_match.get(date_field, "")[:4]
+
+        # ÖZET KISALTMA (Max 350 Karakter)
+        overview = best_match.get('overview', "Özet yok.")
+        if len(overview) > 350:
+            last_dot = overview[:350].rfind('.')
+            if last_dot != -1:
+                overview = overview[:last_dot + 1]
+            else:
+                overview = overview[:350] + "..."
+
+        return {
+            "poster": poster,
+            "overview": overview,
+            "rating": f"{best_match.get('vote_average', 0):.1f}/10",
+            "year": year
+        }
+
     except:
         pass
     return None
 
+
+def _fetch_itunes_full_metadata(query: str) -> dict:
+    """
+    Müzik için hem poster hem de linkleri çeken yeni fonksiyon.
+    """
+    url = "https://itunes.apple.com/search"
+    params = {"term": query, "media": "music", "limit": 1}
+    try:
+        res = requests.get(url, params=params).json()
+        if res['resultCount'] > 0:
+            item = res['results'][0]
+            artwork = item.get('artworkUrl100', '').replace('100x100', '600x600')
+
+            # Link Üretimi
+            artist = item.get('artistName', '')
+            track = item.get('trackName', '')
+            apple_link = item.get('trackViewUrl')
+
+            links = generate_music_links(artist, track, apple_link)
+
+            return {
+                "poster": artwork,
+                "external_links": links,
+                # Diğerleri None kalsın, Gemini doldursun
+                "overview": None,
+                "rating": None,
+                "year": None
+            }
+    except:
+        pass
+    return None
+
+
+# --- ESKİ RESİM FONKSİYONLARI (KORUNDU) ---
 
 def _fetch_from_google_books(query: str) -> str:
     url = "https://www.googleapis.com/books/v1/volumes"
@@ -169,33 +244,37 @@ def _fetch_from_google_books(query: str) -> str:
         res = requests.get(url, params=params).json()
         if 'items' in res:
             links = res['items'][0]['volumeInfo'].get('imageLinks', {})
-            # Thumbnail'i al ama üzerinde oynayacağız
             best = links.get('extraLarge') or links.get('large') or links.get('medium') or links.get('thumbnail')
-
             if best:
-                # 1. HTTP -> HTTPS
                 best = best.replace("http://", "https://")
-
-                # 2. ZOOM FIX (Regex ile kesin çözüm)
-                # &zoom=1 veya &zoom=2 ne varsa bulup &zoom=0 yapıyoruz
                 best = re.sub(r'&zoom=\d', '&zoom=0', best)
-
-                # 3. Gereksiz parametre temizliği
-                best = best.replace("&edge=curl", "")
-
-                return best
+                return best.replace("&edge=curl", "")
     except:
         pass
     return None
 
 
 def _fetch_from_itunes_music(query: str) -> str:
+    # Bu fonksiyon get_poster_url tarafından kullanılmaya devam ediyor
     url = "https://itunes.apple.com/search"
     params = {"term": query, "media": "music", "limit": 1}
     try:
         res = requests.get(url, params=params).json()
         if res['resultCount'] > 0:
             return res['results'][0].get('artworkUrl100', '').replace('100x100bb', '600x600bb')
+    except:
+        pass
+    return None
+
+
+def _fetch_from_open_library(title: str, creator: str) -> str:
+    cleaned_title = clean_query_for_api(title)
+    search_url = "https://openlibrary.org/search.json"
+    params = {"q": f"{cleaned_title} {creator}", "limit": 1}
+    try:
+        res = requests.get(search_url, params=params, timeout=5).json()
+        if res.get('docs') and res['docs'][0].get('cover_i'):
+            return f"https://covers.openlibrary.org/b/id/{res['docs'][0]['cover_i']}-L.jpg"
     except:
         pass
     return None

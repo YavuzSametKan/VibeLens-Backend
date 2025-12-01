@@ -12,10 +12,13 @@ class Category(str, Enum):
 # Tavsiye Kartının Şablonu
 class RecommendationItem(BaseModel):
     title: str
-    creator: Optional[str] = "" # Yönetmen, Yazar vs.
-    rating: str
-    poster_url: str
+    creator: Optional[str] = ""
+    rating: Optional[str] = None
+    poster_url: Optional[str] = None
+    overview: Optional[str] = None
+    year: Optional[str] = None
     reason: str
+    external_links: Optional[Dict[str, str]] = None
 
 # API'nin Döneceği Ana Cevap Şablonu
 class VibeResponse(BaseModel):

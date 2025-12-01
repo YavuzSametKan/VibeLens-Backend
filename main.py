@@ -4,7 +4,6 @@ from services import analyze_image_with_smart_ai, get_recommendations_from_gemin
 
 app = FastAPI(title="VibeLens API")
 
-
 @app.post("/analyze", response_model=VibeResponse)
 async def analyze(
         category: Category = Form(...),
