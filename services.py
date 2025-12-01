@@ -9,7 +9,7 @@ from deepface import DeepFace
 from hsemotion.facial_emotions import HSEmotionRecognizer
 import google.generativeai as genai
 from models import Category
-from prompts import build_gemini_prompt
+from app.core.prompts import build_gemini_prompt
 from search_service import get_content_metadata  # Metadata fonksiyonunu kullanıyoruz
 from utils import ExecutionTimer
 from dotenv import load_dotenv
