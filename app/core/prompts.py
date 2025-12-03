@@ -1,17 +1,19 @@
 import json
 import random
 
-from models import Category
+from app.schemas.analysis import Category
 
 def build_gemini_prompt(category: Category, age: int, gender: str, emotion: str, secondary_emotion: str, raw_scores: dict) -> str:
+    """
+        Constructs a detailed JSON-output prompt for the Gemini model based on user's emotional context.
+        The prompt sets a persona, defines strict content rules (anti-cliché), and forces a JSON output.
+    """
     scores_str = json.dumps(raw_scores)
 
-    # RASTGELELİK FAKTÖRÜ (Seed)
-    # Her seferinde prompt'un içine görünmez bir rastgele sayı atıyoruz ki
-    # Gemini bunun yeni bir istek olduğunu anlasın ve cache'den cevap dönmesin.
+    # RANDOM SEED: A random number is injected to prevent the model from returning cached responses.
     random_seed = random.randint(1, 10000)
 
-    # 1. PERSONA VE GİRİŞ
+    # 1. PERSONA AND INPUT CONTEXT
     base_prompt = f"""
     Sen VibeLens, sinema, edebiyat ve müzik dünyasının kıyıda köşede kalmış hazinelerini de bilen, 'mainstream' (popüler) kültürün ötesine geçebilen zeki bir küratörsün. (Random Seed: {random_seed})
 
@@ -53,8 +55,7 @@ def build_gemini_prompt(category: Category, age: int, gender: str, emotion: str,
     - Kararı tamamen duygu analizine ve sanatsal uyuma bırak.
     """
 
-    # 2. KATEGORİYE ÖZEL KURALLAR (Burayı Ayırdık)
-
+    # 2. CATEGORY-SPECIFIC INSTRUCTIONS
     if category in [Category.MOVIE, Category.SERIES]:
         instruction = """
             KATEGORİ: FILM/DIZI
@@ -73,7 +74,7 @@ def build_gemini_prompt(category: Category, age: int, gender: str, emotion: str,
             4. 'poster_url': Bunu BOŞ BIRAK (""). (Bunu biz bulacağız, sen metne odaklan).
             """
 
-    # 3. ÇIKTI FORMATI VE KURALLAR
+    # 3. OUTPUT FORMAT AND TECHNICAL RULES
     output_format = """
     ⚠️ TEKNİK KURALLAR:
     1. 'mood_description' alanında "Sadece üzgün görünmüyorsun, aynı zamanda..." gibi birleştirici bir analiz yap.
@@ -97,4 +98,8 @@ def build_gemini_prompt(category: Category, age: int, gender: str, emotion: str,
         ]
     }
     """
+
+    # NOTE: Added dominant_emotion, secondary_emotion, detected_age, detected_gender, and emotion_scores
+    # to the JSON template to match the VibeResponse schema, ensuring the model returns all required fields.
+
     return base_prompt + instruction + output_format

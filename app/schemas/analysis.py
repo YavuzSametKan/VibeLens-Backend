@@ -2,14 +2,18 @@ from enum import Enum
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 
-# Kategori Enum'ı: API'de Dropdown açılmasını sağlar
+# --- ENUMERATIONS ---
+
+# Category Enum: Ensures a fixed set of content types and enables dropdowns in the API/Frontend
 class Category(str, Enum):
     MOVIE = "Movie"
     SERIES = "Series"
     MUSIC = "Music"
     BOOK = "Book"
 
-# Tavsiye Kartının Şablonu
+# --- PYDANTIC SCHEMAS ---
+
+# Template for a single recommendation card
 class RecommendationItem(BaseModel):
     title: str
     creator: Optional[str] = ""
@@ -20,7 +24,7 @@ class RecommendationItem(BaseModel):
     reason: str
     external_links: Optional[Dict[str, str]] = None
 
-# API'nin Döneceği Ana Cevap Şablonu
+# The Main Response Schema returned by the API
 class VibeResponse(BaseModel):
     mood_title: str
     mood_description: str

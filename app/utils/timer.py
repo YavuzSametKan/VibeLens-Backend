@@ -1,12 +1,12 @@
 import time
 from colorama import Fore, Style, init
 
-# Windows terminal renklerini düzeltir
+# Initializes colorama for Windows terminal compatibility
 init(autoreset=True)
 
 class ExecutionTimer:
     """
-    Kod bloklarının çalışma süresini ölçen Context Manager.
+    Context Manager to measure the execution time of code blocks.
     """
 
     def __init__(self, step_name: str):
@@ -15,16 +15,16 @@ class ExecutionTimer:
 
     def __enter__(self):
         self.start_time = time.time()
-        print(f"{Fore.CYAN}⏳ [BAŞLIYOR] {self.step_name}...{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}⏳ [STARTING] {self.step_name}...{Style.RESET_ALL}")
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         end_time = time.time()
         duration = end_time - self.start_time
 
-        # Süreye göre renk değiştir (Yavaşsa Kırmızı, Hızlıysa Yeşil)
+        # Color based on duration (Green for fast, Red for slow)
         color = Fore.GREEN
         if duration > 2.0: color = Fore.YELLOW
         if duration > 5.0: color = Fore.RED
 
-        print(f"{color}✅ [BİTTİ]    {self.step_name} -> {duration:.4f} sn{Style.RESET_ALL}")
+        print(f"{color}✅ [FINISHED] {self.step_name} -> {duration:.4f} sec{Style.RESET_ALL}")
