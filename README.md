@@ -6,6 +6,13 @@ VibeLens is a sophisticated backend service designed to provide personalized con
 
 The system relies on a microservices-based architecture within a monolithic FastAPI application, utilizing PyTorch for deep learning inference and Google Gemini for semantic reasoning and content curation.
 
+## Live Analysis Example
+
+![VibeLens Live Emotion Analysis](assets/vibelens_live_analysis.png)
+
+* **Complex Emotion Logic:** Goes beyond simple "Happy/Sad" classification by calculating secondary emotions and weighted scores.
+* **Structured AI Output:** Enforces JSON schema outputs from the LLM to ensure reliable parsing...
+
 ## Table of Contents
 
 1.  [System Architecture](#system-architecture)
