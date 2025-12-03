@@ -29,6 +29,7 @@ async def analyze(
         mood_description=recommendation_data['mood_description'],
         recommendations=recommendation_data['recommendations'],
         dominant_emotion=user_context['emotion'],
+        secondary_emotion=user_context['secondary_emotion'],
         detected_age=user_context['age'],
         detected_gender=user_context['gender'],
         emotion_scores=user_context['raw_emotion_scores']

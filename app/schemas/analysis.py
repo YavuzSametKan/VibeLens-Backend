@@ -25,6 +25,7 @@ class VibeResponse(BaseModel):
     mood_title: str
     mood_description: str
     dominant_emotion: str
+    secondary_emotion: str
     detected_age: int
     detected_gender: str
     emotion_scores: Dict[str, float]
