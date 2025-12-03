@@ -8,7 +8,7 @@ The system relies on a microservices-based architecture within a monolithic Fast
 
 ## Live Analysis Example
 
-![VibeLens Live Emotion Analysis](assets/vibelens_live_analysis.png)
+![VibeLens Live Emotion Analysis](assets/vibelens_live_analysis.jpeg)
 
 * **Complex Emotion Logic:** Goes beyond simple "Happy/Sad" classification by calculating secondary emotions and weighted scores.
 * **Structured AI Output:** Enforces JSON schema outputs from the LLM to ensure reliable parsing...
