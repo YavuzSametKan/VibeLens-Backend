@@ -120,10 +120,10 @@ def get_recommendations_from_gemini(user_context: dict, category: Category) -> d
         except Exception as e:
             print(f" Attempt {attempt} Failed: {e}")
             if attempt < MAX_RETRIES:
-                print(f"⏳ Waiting for {RETRY_DELAY} seconds before retry...")
+                print(f" Waiting for {RETRY_DELAY} seconds before retry...")
                 time.sleep(RETRY_DELAY)
             else:
-                print("🚨 All attempts failed.")
+                print(" All attempts failed.")
 
     # 3. Fallback Check
     if not data:

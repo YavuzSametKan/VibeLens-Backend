@@ -7,7 +7,7 @@ from app.services.vision_service import analyze_image_with_smart_ai
 from app.services.llm_services import get_recommendations_from_gemini
 
 ROOT_DIR = Path(__file__).parent.parent.parent
-STATUS_HTML_FILE_PATH = ROOT_DIR / "index.html"
+STATUS_HTML_FILE_PATH = ROOT_DIR / "static/index.html"
 
 # Initialize the API Router
 router = APIRouter()

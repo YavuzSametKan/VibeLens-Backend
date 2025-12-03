@@ -1,37 +1,8 @@
 import cv2
 import numpy as np
-import torch
 from deepface import DeepFace
-from hsemotion.facial_emotions import HSEmotionRecognizer
-
-# --- PyTorch Compatibility Fix (See explanation below) ---
-_original_torch_load = torch.load
-
-
-def _unsafe_torch_load(*args, **kwargs):
-    kwargs['weights_only'] = False
-    return _original_torch_load(*args, **kwargs)
-
-
-torch.load = _unsafe_torch_load
-
-# --- CONFIGURATION ---
-THRESHOLDS = {
-    "Happiness": 0.30, "Sadness": 0.25, "Anger": 0.12,
-    "Fear": 0.035, "Disgust": 0.15, "Surprise": 0.14, "Contempt": 0.47
-}
-
-EMOTION_CLASSES = {
-    0: 'Anger', 1: 'Contempt', 2: 'Disgust', 3: 'Fear',
-    4: 'Happiness', 5: 'Neutral', 6: 'Sadness', 7: 'Surprise'
-}
-
-# --- MODEL INITIALIZATION ---
-DEVICE = 'mps' if torch.backends.mps.is_available() else 'cpu'
-try:
-    emotion_recognizer = HSEmotionRecognizer(model_name='enet_b0_8_best_vgaf', device=DEVICE)
-except Exception:
-    emotion_recognizer = None
+from app.core.models import THRESHOLDS, EMOTION_CLASSES, emotion_recognizer
+from app.utils.timer import ExecutionTimer
 
 
 # --- HELPER FUNCTIONS ---
@@ -95,54 +66,55 @@ def calculate_custom_emotion(raw_scores: np.ndarray) -> tuple[str, dict]:
 # --- MAIN ANALYSIS FUNCTION ---
 def analyze_image_with_smart_ai(image_bytes: bytes) -> dict | None:
     """Performs multi-step analysis (Demography + Custom Emotion Scoring) on an image."""
-    try:
-        # Decode Image
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    with ExecutionTimer("Vision Analysis Pipeline"):
+        try:
+            # Decode Image
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        # DeepFace Demography Analysis (Age, Gender, Face Region)
-        demography_objs = DeepFace.analyze(
-            img_path=img,
-            actions=['age', 'gender'],
-            detector_backend='retinaface',
-            enforce_detection=False,
-            silent=True
-        )
-        demography = demography_objs[0]
+            # DeepFace Demography Analysis (Age, Gender, Face Region)
+            demography_objs = DeepFace.analyze(
+                img_path=img,
+                actions=['age', 'gender'],
+                detector_backend='retinaface',
+                enforce_detection=False,
+                silent=True
+            )
+            demography = demography_objs[0]
 
-        region = demography['region']
-        x, y, w, h = region['x'], region['y'], region['w'], region['h']
+            region = demography['region']
+            x, y, w, h = region['x'], region['y'], region['w'], region['h']
 
-        # Prepare Face Image for Emotion Recognition
-        face_img = img[y:y + h, x:x + w]
-        if face_img.size == 0:
+            # Prepare Face Image for Emotion Recognition
+            face_img = img[y:y + h, x:x + w]
+            if face_img.size == 0:
+                return None
+
+            face_img = cv2.resize(face_img, (224, 224))
+            face_img_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+
+            # HSEmotion Prediction
+            _, raw_scores = emotion_recognizer.predict_emotions(face_img_rgb, logits=False)
+
+            # Custom Emotion Scoring
+            dominant_emotion, adjusted_score_dict = calculate_custom_emotion(raw_scores)
+
+            # Calculate Secondary Emotion
+            raw_score_dict_full = {EMOTION_CLASSES[i]: raw_scores[i] for i in range(len(raw_scores))}
+            secondary_emotion = get_secondary_emotion(raw_score_dict_full, dominant_emotion)
+
+            # Final Result Assembly
+            return {
+                "emotion": dominant_emotion,
+                "secondary_emotion": secondary_emotion,
+                "age": int(demography['age']),
+                "gender": demography['dominant_gender'],
+                "raw_emotion_scores": dict(sorted(
+                    adjusted_score_dict.items(),
+                    key=lambda item: item[1],
+                    reverse=True
+                ))
+            }
+
+        except Exception:
             return None
-
-        face_img = cv2.resize(face_img, (224, 224))
-        face_img_rgb = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
-
-        # HSEmotion Prediction
-        _, raw_scores = emotion_recognizer.predict_emotions(face_img_rgb, logits=False)
-
-        # Custom Emotion Scoring
-        dominant_emotion, adjusted_score_dict = calculate_custom_emotion(raw_scores)
-
-        # Calculate Secondary Emotion
-        raw_score_dict_full = {EMOTION_CLASSES[i]: raw_scores[i] for i in range(len(raw_scores))}
-        secondary_emotion = get_secondary_emotion(raw_score_dict_full, dominant_emotion)
-
-        # Final Result Assembly
-        return {
-            "emotion": dominant_emotion,
-            "secondary_emotion": secondary_emotion,
-            "age": int(demography['age']),
-            "gender": demography['dominant_gender'],
-            "raw_emotion_scores": dict(sorted(
-                adjusted_score_dict.items(),
-                key=lambda item: item[1],
-                reverse=True
-            ))
-        }
-
-    except Exception:
-        return None

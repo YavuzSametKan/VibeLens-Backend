@@ -1,7 +1,21 @@
-.venv
-.idea
-.env
-
-# Python artifacts
-__pycache__/
+# Virtual Environment
+.venv/
+venv/
+env/
 *.pyc
+
+# OS Specific
+.DS_Store
+
+# Critical Security/Config Files
+.env
+config.local.json
+
+# Logs and Data
+*.log
+data/
+
+# IDE Specific Files (If using PyCharm/VSCode, etc.)
+.idea/
+.vscode/
+test_main.http
