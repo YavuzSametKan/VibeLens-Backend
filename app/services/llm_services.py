@@ -37,7 +37,21 @@ model = genai.GenerativeModel(
 
 
 # --- HELPER FUNCTIONS ---
-x"
+def update_item_with_metadata(item: dict, category: Category) -> dict:
+    """
+    Fetches metadata for a content item and merges it with the Gemini recommendation.
+    """
+    try:
+        title = item.get('title', '')
+        metadata = get_content_metadata(title, category.value)
+        
+        # Merge metadata with item, only if metadata has valid values
+        if metadata.get('rating') and str(metadata['rating']).strip():
+            item['rating'] = metadata['rating']
+        
+        if metadata.get('overview') and str(metadata['overview']).strip():
+            item['overview'] = metadata['overview']
+        
         if metadata.get('year') and str(metadata['year']).strip():
             item['year'] = metadata['year']
         
