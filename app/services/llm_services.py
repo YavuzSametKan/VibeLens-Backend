@@ -37,24 +37,10 @@ model = genai.GenerativeModel(
 
 
 # --- HELPER FUNCTIONS ---
-def update_item_with_metadata(item: dict, category: Category) -> dict:
-    """
-    Intelligently merges Gemini's data with external API metadata.
-    Poster is always prioritized from the external API (search_service).
-    """
-    try:
-        metadata = get_content_metadata(item['title'], item['creator'], category)
-
-        # Poster: Always take from the API
-        item['poster_url'] = metadata['poster']
-
-        # Update other fields only if API returned a value
-        if metadata.get('overview'):
-            item['overview'] = metadata['overview']
-        if metadata.get('rating'):
-            item['rating'] = metadata['rating']
-        if metadata.get('year'):
+x"
+        if metadata.get('year') and str(metadata['year']).strip():
             item['year'] = metadata['year']
+        
         if metadata.get('external_links'):
             item['external_links'] = metadata['external_links']
 

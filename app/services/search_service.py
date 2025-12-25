@@ -44,6 +44,12 @@ def is_valid_image(url: str) -> bool:
     """Checks if a URL points to a valid, substantial image."""
     if not url or "placehold.co" in url:
         return False
+    
+    # Trust TMDB URLs without validation (they're from a reliable API)
+    if "image.tmdb.org" in url or "themoviedb.org" in url:
+        print(f"✓ Trusted TMDB poster URL: {url}")
+        return True
+    
     # Specific Google Books check
     if "books.google.com" in url and "zoom=0" not in url:
         pass
@@ -51,17 +57,21 @@ def is_valid_image(url: str) -> bool:
     try:
         response = requests.get(url, timeout=4)
         if response.status_code != 200:
+            print(f"⚠️ Image validation failed (status {response.status_code}): {url}")
             return False
         img_data = response.content
         img = Image.open(BytesIO(img_data))
 
         # Minimum size and data length checks
         if img.width < 50 or img.height < 50:
+            print(f"⚠️ Image too small ({img.width}x{img.height}): {url}")
             return False
         if len(img_data) < 2500:
+            print(f"⚠️ Image file too small ({len(img_data)} bytes): {url}")
             return False
         return True
-    except Exception:
+    except Exception as e:
+        print(f"⚠️ Image validation error: {e} - {url}")
         return False
 
 
@@ -83,6 +93,7 @@ def search_image_fallback(query: str) -> str:
 def _fetch_tmdb_metadata(query: str, content_type: str) -> dict | None:
     """Fetches metadata for movies or TV series from TMDB."""
     if not TMDB_KEY:
+        print("⚠️ TMDB API Key not configured")
         return None
 
     clean_query = clean_query_for_api(query)
@@ -90,38 +101,53 @@ def _fetch_tmdb_metadata(query: str, content_type: str) -> dict | None:
     params = {"api_key": TMDB_KEY, "query": clean_query, "language": "tr-TR"}
 
     try:
-        res = requests.get(url, params=params).json()
+        res = requests.get(url, params=params, timeout=5).json()
         results = res.get('results', [])
         if not results:
+            print(f"⚠️ TMDB: No results found for '{query}' (cleaned: '{clean_query}')")
             return None
 
         # Select the best match based on vote count
         best_match = max(results, key=lambda x: x.get('vote_count', 0))
+        print(f"✓ TMDB found: {best_match.get('title') or best_match.get('name', 'Unknown')} (votes: {best_match.get('vote_count', 0)})")
 
         # Poster URL construction
         poster = PLACEHOLDER_IMG
         if best_match.get('poster_path'):
             poster = f"https://image.tmdb.org/t/p/w500{best_match['poster_path']}"
+            print(f"✓ Poster path found: {best_match['poster_path']}")
+        else:
+            print(f"⚠️ No poster_path in TMDB response for '{query}'")
 
+        # Extract year (only if valid)
         date_field = 'release_date' if content_type == 'movie' else 'first_air_date'
-        year = best_match.get(date_field, "")[:4]
+        year_str = best_match.get(date_field, "")
+        year = year_str[:4] if year_str and len(year_str) >= 4 else None
 
-        # Truncate overview
-        overview = best_match.get('overview', "No summary available.")
-        if len(overview) > 350:
+        # Extract overview (handle empty strings)
+        overview = best_match.get('overview', "").strip()
+        if not overview:
+            overview = None  # Return None instead of empty string, so Gemini's value can be used
+        elif len(overview) > 350:
+            # Truncate if too long
             last_dot = overview[:350].rfind('.')
             if last_dot != -1:
                 overview = overview[:last_dot + 1]
             else:
                 overview = overview[:350] + "..."
 
+        # Extract rating
+        vote_average = best_match.get('vote_average', 0)
+        rating = f"{vote_average:.1f}/10" if vote_average > 0 else None
+
         return {
             "poster": poster,
             "overview": overview,
-            "rating": f"{best_match.get('vote_average', 0):.1f}/10",
+            "rating": rating,
             "year": year
         }
-    except:
+    except Exception as e:
+        print(f"⚠️ TMDB API Error for '{query}': {e}")
         return None
 
 
@@ -226,6 +252,8 @@ def get_poster_url(title: str, creator: str, category: Category) -> str:
 # --- MAIN FUNCTION: METADATA COLLECTOR ---
 def get_content_metadata(title: str, creator: str, category: Category) -> dict:
     """Collects comprehensive metadata for a piece of content."""
+    print(f"\n🔍 Fetching metadata for: '{title}' ({category.value})")
+    
     metadata = {
         "poster": PLACEHOLDER_IMG,
         "overview": None,
@@ -237,11 +265,19 @@ def get_content_metadata(title: str, creator: str, category: Category) -> dict:
     try:
         if category == Category.MOVIE:
             api_data = _fetch_tmdb_metadata(title, "movie")
-            if api_data: metadata.update(api_data)
+            if api_data:
+                print(f"✓ TMDB data received: poster={api_data.get('poster', 'N/A')[:50]}...")
+                metadata.update(api_data)
+            else:
+                print(f"⚠️ TMDB returned no data for movie: '{title}'")
 
         elif category == Category.SERIES:
             api_data = _fetch_tmdb_metadata(title, "tv")
-            if api_data: metadata.update(api_data)
+            if api_data:
+                print(f"✓ TMDB data received: poster={api_data.get('poster', 'N/A')[:50]}...")
+                metadata.update(api_data)
+            else:
+                print(f"⚠️ TMDB returned no data for series: '{title}'")
 
         elif category == Category.MUSIC:
             itunes_data = _fetch_itunes_full_metadata(f"{title} {creator}")
@@ -257,12 +293,23 @@ def get_content_metadata(title: str, creator: str, category: Category) -> dict:
             metadata["poster"] = poster_url
 
         # Final Poster Fallback Check (For Movie/Series where TMDB failed)
-        if category in [Category.MOVIE, Category.SERIES] and not is_valid_image(metadata["poster"]):
-            scrape_query = f"{title} {creator} {category.value} official poster"
-            metadata["poster"] = search_image_fallback(scrape_query)
+        if category in [Category.MOVIE, Category.SERIES]:
+            print(f"🖼️  Poster validation check for '{title}':")
+            print(f"   Current poster: {metadata['poster']}")
+            
+            if not is_valid_image(metadata["poster"]):
+                print(f"⚠️ Poster validation failed, attempting fallback scraping...")
+                scrape_query = f"{title} {creator} {category.value} official poster"
+                fallback_poster = search_image_fallback(scrape_query)
+                metadata["poster"] = fallback_poster
+                print(f"   Fallback poster: {fallback_poster}")
+            else:
+                print(f"✓ Poster validated successfully")
 
-    except Exception:
+    except Exception as e:
+        print(f"❌ Error in get_content_metadata for '{title}': {e}")
         # Catch any high-level errors and return default metadata
         pass
 
+    print(f"📦 Final metadata poster: {metadata['poster']}\n")
     return metadata

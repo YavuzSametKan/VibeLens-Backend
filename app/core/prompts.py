@@ -60,9 +60,15 @@ def build_gemini_prompt(category: Category, age: int, gender: str, emotion: str,
         instruction = """
             KATEGORİ: FILM/DIZI
             -------------------
-            1. 'rating', 'overview', 'year', 'poster_url' alanlarını KESİNLİKLE BOŞ BIRAK (""). 
-               (Biz bunları veritabanından çekeceğiz, sen zahmet etme).
-            2. Sadece 'title' (Orijinal Ad), 'creator' (Yönetmen) ve 'reason' alanlarını doldur.
+            1. 'title': Orijinal film/dizi adını yaz.
+            2. 'creator': Yönetmen adını yaz.
+            3. 'overview': Film/dizinin konusunu akıcı Türkçe ile özetle (2-3 cümle). Asla yarım bırakma.
+            4. 'rating': Kendi bilgi tabanına dayanarak 10 üzerinden bir puan ver (Örn: "8.5/10"). "Null" bırakma.
+            5. 'year': Film/dizinin çıkış yılını yaz.
+            6. 'poster_url': Bunu BOŞ BIRAK (""). (Bunu biz bulacağız, sen metne odaklan).
+            
+            NOT: 'rating', 'overview' ve 'year' için verdiğin değerler yedek olarak kalacak. 
+            Eğer veritabanından daha güncel veri bulursak, seninkilerin üzerine yazılacak.
             """
     else:
         instruction = """
