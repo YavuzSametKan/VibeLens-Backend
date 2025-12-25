@@ -43,9 +43,13 @@ def update_item_with_metadata(item: dict, category: Category) -> dict:
     """
     try:
         title = item.get('title', '')
-        metadata = get_content_metadata(title, category.value)
+        creator = item.get('creator', '')
+        metadata = get_content_metadata(title, creator, category)
         
         # Merge metadata with item, only if metadata has valid values
+        if metadata.get('poster') and str(metadata['poster']).strip():
+            item['poster_url'] = metadata['poster']
+
         if metadata.get('rating') and str(metadata['rating']).strip():
             item['rating'] = metadata['rating']
         
