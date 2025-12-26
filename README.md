@@ -1,7 +1,3 @@
-Aşağıda, sağladığın `README.md` dosyasının, teknik terminolojiye sadık kalınarak hazırlanmış Türkçe çevirisi yer almaktadır.
-
----
-
 # VibeLens Backend API
 
 ## Genel Bakış
