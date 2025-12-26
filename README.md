@@ -1,196 +1,214 @@
+Aşağıda, sağladığın `README.md` dosyasının, teknik terminolojiye sadık kalınarak hazırlanmış Türkçe çevirisi yer almaktadır.
+
+---
+
 # VibeLens Backend API
 
-## Overview
+## Genel Bakış
 
-VibeLens is a sophisticated backend service designed to provide personalized content recommendations (Movies, TV Series, Books, and Music) based on facial emotion analysis. By bridging Computer Vision (CV) with Generative AI (LLM), the system analyzes a user's facial expression, determines their dominant and secondary emotional states, and curates a list of "anti-cliché" cultural recommendations tailored to that specific mood.
+VibeLens, yüz duygu analizine dayalı olarak kişiselleştirilmiş içerik önerileri (Filmler, Diziler, Kitaplar ve Müzik) sunmak için tasarlanmış gelişmiş bir arka uç servisidir. Bilgisayarlı Görü (Computer Vision - CV) ile Üretken Yapay Zekayı (Generative AI - LLM) birleştiren sistem; kullanıcının yüz ifadesini analiz eder, baskın ve ikincil duygu durumlarını belirler ve bu özel ruh haline göre uyarlanmış "klişeleşmemiş" kültürel önerilerden oluşan bir liste oluşturur.
 
-The system relies on a microservices-based architecture within a monolithic FastAPI application, utilizing PyTorch for deep learning inference and Google Gemini for semantic reasoning and content curation.
+Sistem, monolitik bir FastAPI uygulaması içerisinde mikroservis tabanlı bir mimariye dayanır; derin öğrenme çıkarımları (inference) için PyTorch'u, anlamsal akıl yürütme ve içerik kürasyonu için ise Google Gemini'ı kullanır.
 
-## Live Analysis Example
+## Canlı Analiz Örneği
 
-![VibeLens Live Emotion Analysis](assets/vibelens_live_analysis.jpeg)
+![VibeLens Canlı Duygu Analizi](assets/vibelens_live_analysis.jpeg)
 
-* **Complex Emotion Logic:** Goes beyond simple "Happy/Sad" classification by calculating secondary emotions and weighted scores.
-* **Structured AI Output:** Enforces JSON schema outputs from the LLM to ensure reliable parsing...
+* **Karmaşık Duygu Mantığı:** İkincil duyguları ve ağırlıklı puanları hesaplayarak basit "Mutlu/Üzgün" sınıflandırmasının ötesine geçer.
+* **Yapılandırılmış YZ Çıktısı:** Güvenilir ayrıştırma (parsing) sağlamak için LLM'den gelen çıktıları JSON şemasına zorlar...
 
-## Table of Contents
+## İçindekiler
 
-1.  [System Architecture](#system-architecture)
-2.  [Key Features](#key-features)
-3.  [Technology Stack](#technology-stack)
-4.  [Prerequisites](#prerequisites)
-5.  [Installation](#installation)
-6.  [Configuration](#configuration)
-7.  [Usage](#usage)
-8.  [Project Structure](#project-structure)
-9.  [Algorithmic Details](#algorithmic-details)
-10. [License](#license)
+1. [Sistem Mimarisi](https://www.google.com/search?q=%23sistem-mimarisi)
+2. [Temel Özellikler](https://www.google.com/search?q=%23temel-%C3%B6zellikler)
+3. [Teknoloji Yığını](https://www.google.com/search?q=%23teknoloji-y%C4%B1%C4%9F%C4%B1n%C4%B1)
+4. [Ön Koşullar](https://www.google.com/search?q=%23%C3%B6n-ko%C5%9Fullar)
+5. [Kurulum](https://www.google.com/search?q=%23kurulum)
+6. [Yapılandırma](https://www.google.com/search?q=%23yap%C4%B1land%C4%B1rma)
+7. [Kullanım](https://www.google.com/search?q=%23kullan%C4%B1m)
+8. [Proje Yapısı](https://www.google.com/search?q=%23proje-yap%C4%B1s%C4%B1)
+9. [Algoritmik Detaylar](https://www.google.com/search?q=%23algoritmik-detaylar)
+10. [Lisans](https://www.google.com/search?q=%23lisans)
 
-## System Architecture
+## Sistem Mimarisi
 
-The VibeLens pipeline consists of four distinct stages:
+VibeLens işlem hattı (pipeline) dört farklı aşamadan oluşur:
 
-1.  **Visual Ingestion & Analysis:**
+1. **Görsel Alım & Analiz:**
+* API, `multipart/form-data` isteği aracılığıyla bir görüntü dosyası kabul eder.
+* **Yüz Algılama:** Yüzleri tespit etmek ve demografik verileri (yaş, cinsiyet) çıkarmak için `DeepFace` (RetinaFace arka ucu) kullanır.
+* **Duygu Tanıma:** Yüz bölgesini kırpar ve 8 farklı duygu için ham logit değerleri üretmek üzere `HSEmotion`'a (ENet tabanlı bir PyTorch modeli) iletir.
 
-      * The API accepts an image file via a multipart/form-data request.
-      * **Face Detection:** Utilizes `DeepFace` (RetinaFace backend) to detect faces and extract demographic data (age, gender).
-      * **Emotion Recognition:** Crops the facial region and passes it to `HSEmotion` (an ENet-based PyTorch model) to generate raw logits for 8 distinct emotions.
 
-2.  **Dynamic Emotion Scoring:**
+2. **Dinamik Duygu Puanlama:**
+* Ham logitler, önceden tanımlanmış eşiklere göre "Göreceli Gücü" hesaplayan özel bir algoritmadan geçirilir.
+* Sistem, karmaşık bir duygusal profil oluşturmak için bir "Baskın Duygu" ve ince bir "İkincil Duygu" tanımlar (örn. "Hafif Öfke tonlu Üzüntü").
 
-      * Raw logits are processed through a custom algorithm that calculates "Relative Strength" against pre-defined thresholds.
-      * The system identifies a "Dominant Emotion" and a subtle "Secondary Emotion" to create a complex emotional profile (e.g., "Sadness with a subtone of Anger").
 
-3.  **Generative Curation (LLM):**
+3. **Üretken Kürasyon (LLM):**
+* Duygusal profil, demografik verilerle birlikte yapılandırılmış bir istem (prompt) haline getirilir.
+* İçerik önerileri oluşturmak için **Google Gemini Flash** sorgulanır. İstem mühendisliği (prompt engineering), genel sonuçlardan kaçınmak için çeşitlilik kurallarını uygular (örn. "Gişe Rekortmenleri" yerine "Gizli Cevherler").
 
-      * The emotional profile, along with demographic data, is constructed into a structured prompt.
-      * **Google Gemini Flash** is queried to generate content recommendations. The prompt engineering enforces diversity rules to avoid generic results (e.g., "Hidden Gems" vs. "Blockbusters").
 
-4.  **Metadata Enrichment:**
+4. **Metadata Zenginleştirme:**
+* LLM'den dönen ham başlıklar, harici API'ler (TMDB, iTunes, Google Books) kullanılarak metadata (Posterler, Puanlar, Özetler, Yıllar) ile zenginleştirilir.
+* Bu süreç, gecikmeyi en aza indirmek için birden fazla öğe verisini paralel olarak getirmek adına `concurrent.futures` kullanır.
 
-      * The raw titles returned by the LLM are enriched with metadata (Posters, Ratings, Summaries, Years) using external APIs (TMDB, iTunes, Google Books).
-      * This process uses `concurrent.futures` to fetch data for multiple items in parallel, minimizing latency.
 
-## Key Features
 
-  * **High-Performance API:** Built on FastAPI, offering asynchronous request handling and automatic OpenAPI documentation.
-  * **Advanced Computer Vision:** Integrates state-of-the-art models for facial expression recognition (FER) with high accuracy.
-  * **Complex Emotion Logic:** Goes beyond simple "Happy/Sad" classification by calculating secondary emotions and weighted scores.
-  * **Structured AI Output:** Enforces JSON schema outputs from the LLM to ensure reliable parsing and type safety.
-  * **Robust Metadata Aggregation:** A resilient fallback mechanism that queries multiple providers (TMDB, iTunes, Open Library) and falls back to DuckDuckGo scraping if official APIs fail.
-  * **Concurrency:** Heavy I/O operations (external API calls) are threaded to ensure the response time remains low.
+## Temel Özellikler
 
-## Technology Stack
+* **Yüksek Performanslı API:** Asenkron istek yönetimi ve otomatik OpenAPI dokümantasyonu sunan FastAPI üzerine inşa edilmiştir.
+* **Gelişmiş Bilgisayarlı Görü:** Yüz ifadesi tanıma (FER) için son teknoloji modelleri yüksek doğrulukla entegre eder.
+* **Karmaşık Duygu Mantığı:** İkincil duyguları ve ağırlıklı puanları hesaplayarak basit "Mutlu/Üzgün" sınıflandırmasının ötesine geçer.
+* **Yapılandırılmış YZ Çıktısı:** Güvenilir ayrıştırma ve tip güvenliği sağlamak için LLM'den gelen çıktıları JSON şemasına zorlar.
+* **Güçlü Metadata Toplama:** Birden fazla sağlayıcıyı (TMDB, iTunes, Open Library) sorgulayan ve resmi API'ler başarısız olursa DuckDuckGo kazımasına (scraping) geçen dayanıklı bir geri dönüş (fallback) mekanizması.
+* **Eşzamanlılık (Concurrency):** Ağır I/O işlemleri (harici API çağrıları), yanıt süresinin düşük kalmasını sağlamak için iş parçacıklarına (threaded) ayrılmıştır.
 
-  * **Language:** Python 3.11+
-  * **Web Framework:** FastAPI / Uvicorn
-  * **Computer Vision:**
-      * PyTorch
-      * DeepFace
-      * HSEmotion (HSE-as/hsemotion)
-      * OpenCV (cv2)
-  * **Generative AI:** Google Generative AI (Gemini Flash)
-  * **Data Validation:** Pydantic
-  * **HTTP Client:** Requests
-  * **Search/Scraping:** DuckDuckGo Search
-  * **Process Management:** Concurrent Futures (ThreadPoolExecutor)
+## Teknoloji Yığını
 
-## Prerequisites
+* **Dil:** Python 3.11+
+* **Web Çatısı:** FastAPI / Uvicorn
+* **Bilgisayarlı Görü:**
+* PyTorch
+* DeepFace
+* HSEmotion (HSE-as/hsemotion)
+* OpenCV (cv2)
 
-  * Python 3.10 or higher.
-  * pip (Python Package Installer).
-  * A valid Google Gemini API Key.
-  * A valid TMDB (The Movie Database) API Key.
 
-## Installation
+* **Üretken YZ:** Google Generative AI (Gemini Flash)
+* **Veri Doğrulama:** Pydantic
+* **HTTP İstemcisi:** Requests
+* **Arama/Kazıma:** DuckDuckGo Search
+* **Süreç Yönetimi:** Concurrent Futures (ThreadPoolExecutor)
 
-1.  **Clone the Repository**
+## Ön Koşullar
 
-    ```bash
-    git clone https://github.com/yourusername/vibelens-backend.git
-    cd vibelens-backend
-    ```
+* Python 3.10 veya üzeri.
+* pip (Python Paket Yükleyicisi).
+* Geçerli bir Google Gemini API Anahtarı.
+* Geçerli bir TMDB (The Movie Database) API Anahtarı.
 
-2.  **Create a Virtual Environment**
-    It is recommended to use a virtual environment to manage dependencies.
+## Kurulum
 
-    ```bash
-    python -m venv .venv
-    # Activate on Windows:
-    .venv\Scripts\activate
-    # Activate on macOS/Linux:
-    source .venv/bin/activate
-    ```
+1. **Depoyu (Repository) Klonlayın**
+```bash
+git clone https://github.com/kullaniciadiniz/vibelens-backend.git
+cd vibelens-backend
 
-3.  **Install Dependencies**
+```
 
-    ```bash
-    pip install -r requirements.txt
-    ```
 
-## Configuration
+2. **Sanal Ortam (Virtual Environment) Oluşturun**
+Bağımlılıkları yönetmek için sanal ortam kullanılması önerilir.
+```bash
+python -m venv .venv
+# Windows'ta etkinleştirme:
+.venv\Scripts\activate
+# macOS/Linux'ta etkinleştirme:
+source .venv/bin/activate
 
-The application requires environment variables for API authentication. Create a `.env` file in the root directory based on the provided `.env.example`.
+```
 
-**Required Variables:**
 
-| Variable | Description |
-| :--- | :--- |
-| `GEMINI_API_KEY` | API Key for Google Gemini (AI generation). |
-| `TMDB_API_KEY` | API Key for The Movie Database (Movie/Series metadata). |
+3. **Bağımlılıkları Yükleyin**
+```bash
+pip install -r requirements.txt
 
-**Note on PyTorch Security:**
-The project includes a patch for `torch.load` to support older model weights used by the HSEmotion library. This is handled internally in `app/core/models.py`.
+```
 
-## Usage
 
-### Running the Server
 
-Start the application using Uvicorn. The server will run on `http://127.0.0.1:8000`.
+## Yapılandırma
+
+Uygulama, API kimlik doğrulaması için ortam değişkenlerine ihtiyaç duyar. Kök dizinde `.env.example` dosyasını baz alarak bir `.env` dosyası oluşturun.
+
+**Gerekli Değişkenler:**
+
+| Değişken | Açıklama |
+| --- | --- |
+| `GEMINI_API_KEY` | Google Gemini için API Anahtarı (YZ üretimi). |
+| `TMDB_API_KEY` | The Movie Database için API Anahtarı (Film/Dizi metadatası). |
+
+**PyTorch Güvenliği Üzerine Not:**
+Proje, HSEmotion kütüphanesi tarafından kullanılan eski model ağırlıklarını desteklemek için `torch.load` yaması (patch) içerir. Bu işlem `app/core/models.py` içinde dahili olarak yönetilir.
+
+## Kullanım
+
+### Sunucuyu Çalıştırma
+
+Uygulamayı Uvicorn kullanarak başlatın. Sunucu `http://127.0.0.1:8000` adresinde çalışacaktır.
 
 ```bash
 uvicorn main:app --reload
+
 ```
 
-### API Endpoints
+### API Uç Noktaları (Endpoints)
 
-  * **GET /**: Serves the HTML status page indicating the service health.
-  * **POST /analyze**: The main analysis endpoint.
-      * **Form Data:**
-          * `file`: The image file to analyze (JPEG/PNG).
-          * `category`: The desired recommendation category (`Movie`, `Series`, `Book`, `Music`).
-      * **Response:** JSON object containing the detected mood, demographics, and a list of recommendations.
+* **GET /**: Servis sağlığını gösteren HTML durum sayfasını sunar.
+* **POST /analyze**: Ana analiz uç noktası.
+* **Form Verisi:**
+* `file`: Analiz edilecek görüntü dosyası (JPEG/PNG).
+* `category`: İstenen öneri kategorisi (`Movie`, `Series`, `Book`, `Music`).
 
-### Live Camera Test
 
-A standalone script is provided to test the Computer Vision logic and emotion thresholding in real-time using your webcam.
+* **Yanıt:** Algılanan ruh halini, demografik bilgileri ve öneri listesini içeren JSON nesnesi.
+
+
+
+### Canlı Kamera Testi
+
+Bilgisayarlı Görü mantığını ve duygu eşiklerini web kameranızı kullanarak gerçek zamanlı test etmek için bağımsız (standalone) bir betik sağlanmıştır.
 
 ```bash
 python live_camera_emotion_test.py
+
 ```
 
-## Project Structure
+## Proje Yapısı
 
-The project follows a modular architecture to separate concerns between configuration, schemas, services, and API routing.
+Proje; yapılandırma, şemalar, servisler ve API yönlendirmeleri arasındaki endişeleri (concerns) ayırmak için modüler bir mimari izler.
 
 ```text
 VibeLensBackend/
 ├── app/
 │   ├── api/
-│   │   └── router.py           # API route definitions and request handling
+│   │   └── router.py           # API rota tanımları ve istek yönetimi
 │   ├── core/
-│   │   ├── config.py           # Environment variable management
-│   │   ├── models.py           # ML model initialization and global constants
-│   │   └── prompts.py          # LLM prompt engineering logic
+│   │   ├── config.py           # Ortam değişkeni yönetimi
+│   │   ├── models.py           # ML model başlatma ve genel sabitler
+│   │   └── prompts.py          # LLM istem mühendisliği mantığı
 │   ├── schemas/
-│   │   └── analysis.py         # Pydantic models and Enums
+│   │   └── analysis.py         # Pydantic modelleri ve Enum'lar
 │   ├── services/
-│   │   ├── llm_services.py     # Interaction with Google Gemini
-│   │   ├── search_service.py   # External API integration (TMDB, iTunes, etc.)
-│   │   └── vision_service.py   # Image processing and emotion recognition logic
+│   │   ├── llm_services.py     # Google Gemini ile etkileşim
+│   │   ├── search_service.py   # Harici API entegrasyonu (TMDB, iTunes vb.)
+│   │   └── vision_service.py   # Görüntü işleme ve duygu tanıma mantığı
 │   └── utils/
-│       └── timer.py            # Execution timing utility for performance monitoring
+│       └── timer.py            # Performans izleme için zamanlama aracı
 ├── static/
-│   ├──  index.html             # Static status page
-├── .env.example                # Template for environment variables
-├── .gitignore                  # Git exclusion rules
-├── live_camera_emotion_test.py # Standalone CV testing script
-├── main.py                     # Application entry point
-├── README.md                   # Project documentation
-└── requirements.txt            # Python dependencies
+│   ├──  index.html             # Statik durum sayfası
+├── .env.example                # Ortam değişkenleri için şablon
+├── .gitignore                  # Git hariç tutma kuralları
+├── live_camera_emotion_test.py # Bağımsız CV test betiği
+├── main.py                     # Uygulama giriş noktası
+├── README.md                   # Proje dokümantasyonu
+└── requirements.txt            # Python bağımlılıkları
+
 ```
 
-## Algorithmic Details
+## Algoritmik Detaylar
 
-### Dynamic Emotion Scoring
+### Dinamik Duygu Puanlama
 
-Standard emotion recognition models often output raw probabilities that favor "Neutral" or fail to capture subtle expressions. VibeLens implements a custom algorithm in `app/services/vision_service.py`:
+Standart duygu tanıma modelleri genellikle "Nötr"ü destekleyen ham olasılıklar verir veya ince ifadeleri yakalamakta başarısız olur. VibeLens, `app/services/vision_service.py` içinde özel bir algoritma uygular:
 
-1.  **Thresholding:** Each emotion (e.g., Fear, Happiness) has a specific sensitivity threshold.
-2.  **Weighted Strength:** A score is calculated as `Raw Score / Threshold`. This allows emotions with naturally lower probabilities (like Fear) to compete with dominant emotions (like Happiness).
-3.  **Secondary Emotion Detection:** The system identifies the second-highest weighted emotion to provide nuance (e.g., classifying a face not just as "Sad," but "Sad with Contempt").
-4.  **Normalization:** Final scores are normalized to emphasize the dominant emotion for the user interface while preserving the data required for the LLM context.
+1. **Eşikleme (Thresholding):** Her duygunun (örn. Korku, Mutluluk) belirli bir hassasiyet eşiği vardır.
+2. **Ağırlıklı Güç:** Puan, `Ham Skor / Eşik` olarak hesaplanır. Bu, doğal olarak daha düşük olasılıklara sahip duyguların (Korku gibi), baskın duygularla (Mutluluk gibi) rekabet etmesini sağlar.
+3. **İkincil Duygu Tespiti:** Sistem, nüans sağlamak için en yüksek ağırlığa sahip ikinci duyguyu tanımlar (örn. bir yüzü sadece "Üzgün" olarak değil, "Küçümseme içeren Üzüntü" olarak sınıflandırmak).
+4. **Normalizasyon:** Nihai puanlar, LLM bağlamı için gerekli verileri korurken kullanıcı arayüzü için baskın duyguyu vurgulayacak şekilde normalleştirilir.
 
-## License
+## Lisans
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+Bu proje MIT Lisansı altında lisanslanmıştır. Detaylar için LICENSE dosyasına bakın.
